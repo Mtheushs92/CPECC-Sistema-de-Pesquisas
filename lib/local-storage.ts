@@ -55,9 +55,42 @@ export const seedMockData = (uid?: string) => {
   const hasAdmins = localStorage.getItem('admins');
   if (!hasAdmins) {
     const defaultAdmins = [
-      { id: 'admin-1', username: 'admin', password: 'admin', name: 'Administrador Global', role: 'admin' }
+      { id: 'admin-1', username: 'admin', password: 'admin', name: 'Administrador Global', role: 'admin' },
+      { id: 'admin-2', username: 'cpecc', password: 'cpecc', name: 'Gestor CPECC', role: 'admin' }
     ];
     localStorage.setItem('admins', JSON.stringify(defaultAdmins));
+  }
+
+  // Seeding researchers if not exists
+  const hasResearchers = localStorage.getItem('researchers');
+  if (!hasResearchers) {
+    const defaultResearchers = [
+      {
+        uid: 'user-123',
+        id: 'user-123',
+        nome: 'Dr. Ricardo Santos',
+        cpf: '123.456.789-00',
+        email_inst: 'ricardo.santos@instituicao.edu.br',
+        status: 'Ativo',
+        lattes: 'http://lattes.cnpq.br/123456789',
+        area: 'Medicina',
+        titulacao: 'Doutorado',
+        createdAt: new Date().toISOString()
+      },
+      {
+        uid: 'user-456',
+        id: 'user-456',
+        nome: 'Dra. Maria Oliveira',
+        cpf: '987.654.321-11',
+        email_inst: 'maria.oliveira@instituicao.edu.br',
+        status: 'Em Análise',
+        lattes: 'http://lattes.cnpq.br/987654321',
+        area: 'Biologia',
+        titulacao: 'Mestrado',
+        createdAt: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem('researchers', JSON.stringify(defaultResearchers));
   }
 
   if (!uid) return;
@@ -69,15 +102,27 @@ export const seedMockData = (uid?: string) => {
     {
       id: 'mock-1',
       authorUid: uid,
-      titulo: 'Estudo Clínico sobre Novos Biomarcadores',
+      titulo: 'Estudo Clínico sobre Novos Biomarcadores em Oncologia',
       status: 'Aprovado',
-      createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
+      area: 'Oncologia',
+      createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 25).toISOString(),
     },
     {
       id: 'mock-2',
       authorUid: uid,
-      titulo: 'Análise Epidemiológica 2026',
+      titulo: 'Análise Epidemiológica da COVID-19 em Áreas Urbanas',
       status: 'Em Análise',
+      area: 'Saúde Pública',
+      createdAt: new Date(Date.now() - 86400000 * 15).toISOString(),
+      updatedAt: new Date(Date.now() - 86400000 * 14).toISOString(),
+    },
+    {
+      id: 'mock-5',
+      authorUid: uid,
+      titulo: 'Desenvolvimento de Vacinas Utilizando Tecnologia mRNA',
+      status: 'Rascunho',
+      area: 'Imunologia',
       createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
     }
   ];
@@ -86,10 +131,11 @@ export const seedMockData = (uid?: string) => {
     {
       id: 'mock-3',
       authorUid: uid,
-      titulo: 'Impacto da Inteligência Artificial na Saúde Pública',
-      revista: 'Nature Medicine',
+      titulo: 'Impacto da Inteligência Artificial na Triagem de Doenças Raras',
+      revista: 'Nature Biotechnology',
       status: 'Pendente',
-      createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+      valor_solicitado: 5000,
+      createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
     }
   ];
 
@@ -97,10 +143,11 @@ export const seedMockData = (uid?: string) => {
     {
       id: 'mock-4',
       authorUid: uid,
-      titulo_projeto: 'Iniciação Científica em Genética',
-      nome_estudante: 'Ana Silva',
+      titulo_projeto: 'Monitoramento Genético de Espécies em Risco de Extinção',
+      nome_estudante: 'Ana Silva Santos',
+      orientador: 'Dr. Pesquisador Teste',
       status: 'Aprovado',
-      createdAt: new Date(Date.now() - 86400000 * 20).toISOString(),
+      createdAt: new Date(Date.now() - 86400000 * 45).toISOString(),
     }
   ];
 

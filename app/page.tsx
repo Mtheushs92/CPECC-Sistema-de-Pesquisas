@@ -31,6 +31,10 @@ export default function Home() {
     };
     testConnection();
 
+    if (user) {
+      seedMockData(user.id);
+    }
+
     const checkProfile = async () => {
       if (user) {
         try {

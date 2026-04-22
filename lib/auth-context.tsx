@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [adminsList, setAdminsList] = useState<any[]>([]);
 
   useEffect(() => {
-    // Check local storage for admin session
+    // Check local storage for admins logic
     const checkAdminSession = () => {
       const storedAdmin = localStorage.getItem('adminSession');
       if (storedAdmin) {
@@ -44,23 +44,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     
     checkAdminSession();
 
-    // Fetch admins from Firestore for login validation
-    const fetchAdmins = async () => {
-      try {
-        const docRef = doc(db, 'system_config', 'admins');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().admins) {
-          setAdminsList(docSnap.data().admins);
-        }
-      } catch (e) {
-        console.error('Error fetching admins for login:', e);
-      }
-    };
-    fetchAdmins();
-
     // Firebase Auth Listener
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      
+      // If user logs in with an admin email via Firebase, grant them admin status instantly
+      if (currentUser && (
+        currentUser.email === 'matheus.hs@fepecs.edu.br' || 
+        currentUser.email === 'mhs.pro.digital@gmail.com'
+      )) {
+        const generatedAdmin = {
+          id: currentUser.uid,
+          username: currentUser.email,
+          name: 'Administrador Global',
+          role: 'admin'
+        };
+        setAdminUser(generatedAdmin);
+        localStorage.setItem('adminSession', JSON.stringify(generatedAdmin));
+      }
+      
       setLoading(false);
     });
 

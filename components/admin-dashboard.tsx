@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFromLocal, saveToLocal, removeFromLocal } from '@/lib/local-storage';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, onSnapshot, orderBy } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, onSnapshot, orderBy, setDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 type AdminTab = 'overview' | 'submissions' | 'publications' | 'accountability' | 'team' | 'researchers';
@@ -110,13 +110,32 @@ export default function AdminDashboard() {
         // Fetch researchers
         const researchersQuery = query(collection(db, 'researchers'));
         const unsubscribeResearchers = onSnapshot(researchersQuery, (snapshot) => {
-          const researchersData = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+          let researchersData = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+          
+          // Fallback to local data for testing if Firestore collection is empty
+          if (researchersData.length === 0) {
+            researchersData = JSON.parse(localStorage.getItem('researchers') || '[]');
+          }
+          
           setResearchers(researchersData);
           
           // Fetch projects
           const projectsQuery = query(collection(db, 'projects'));
           const unsubscribeProjects = onSnapshot(projectsQuery, (projSnapshot) => {
-            const projectsData = projSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+            let projectsData = projSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+            
+            // Fallback to local data for projects if Firestore collection is empty
+            if (projectsData.length === 0) {
+              const pesq = JSON.parse(localStorage.getItem('fomento_pesquisa') || '[]');
+              const pub = JSON.parse(localStorage.getItem('fomento_publicacao') || '[]');
+              const pic = JSON.parse(localStorage.getItem('picite') || '[]');
+              projectsData = [
+                ...pesq.map((p: any) => ({ ...p, type: 'fomento_pesquisa' })),
+                ...pub.map((p: any) => ({ ...p, type: 'fomento_publicacao' })),
+                ...pic.map((p: any) => ({ ...p, type: 'picite' }))
+              ];
+            }
+            
             setAllProjects(projectsData);
             
             const formattedSubmissions = projectsData
@@ -592,6 +611,44 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error updating expense status:', error);
       showToast('Erro ao atualizar status da despesa.', 'error');
+    }
+  };
+
+  const handleSeedFirestore = async () => {
+    try {
+      showToast('Semeando banco de dados falso...', 'success');
+      
+      const researcherId = Date.now().toString();
+      const newResearcher = {
+        uid: researcherId,
+        nome: "Dr. Teste Automático",
+        cpf: "000.000.000-00",
+        email_inst: "teste@instituicao.edu.br",
+        status: "Ativo",
+        createdAt: new Date().toISOString()
+      };
+      
+      await setDoc(doc(db, 'researchers', researcherId), newResearcher);
+
+      const projectId = Date.now().toString() + "_proj";
+      const newProject = {
+        authorUid: researcherId,
+        type: "fomento_pesquisa",
+        status: "Em Análise",
+        raw_data: JSON.stringify({
+          titulo: "Projeto Teste Gerado Automaticamente",
+          area: "Medicina",
+          resumo: "Este é um projeto gerado pelo sistema para avaliar as regras."
+        }),
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, 'projects', projectId), newProject);
+
+      showToast('Dados de teste criados no banco de dados com sucesso!');
+    } catch (e: any) {
+      console.error(e);
+      showToast('Erro ao criar dados mock: ' + e.message, 'error');
     }
   };
 
@@ -2330,6 +2387,14 @@ export default function AdminDashboard() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-primary hover:bg-primary/10 transition-all border border-primary/20 mb-2"
           >
             <Download className="w-4 h-4" /> Exportar Base
+          </button>
+          
+          <button 
+            onClick={handleSeedFirestore}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-xs font-bold text-secondary hover:bg-secondary/10 transition-all border border-secondary/20 mb-2"
+            title="Criar projetos e pesquisadores para teste"
+          >
+            Gerar Dados de Teste
           </button>
           <button 
             onClick={logout}

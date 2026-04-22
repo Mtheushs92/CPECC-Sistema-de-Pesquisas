@@ -187,10 +187,21 @@ export default function Login() {
           </form>
         )}
 
-        <div className="mt-8 pt-6 border-t border-outline-variant">
+        <div className="mt-8 pt-6 border-t border-outline-variant space-y-4">
           <p className="text-xs text-on-surface-variant">
             Plataforma de gestão de dossiês institucionais e projetos de pesquisa.
           </p>
+          
+          <div className="bg-surface-container-low p-4 rounded-lg text-left border border-primary/10">
+            <h3 className="text-xs font-bold text-primary flex items-center gap-1 mb-2">
+              <ShieldCheck className="w-3 h-3" /> Credenciais de Teste
+            </h3>
+            <ul className="text-[10px] space-y-1 text-on-surface-variant list-disc pl-3">
+              <li><strong>Admin:</strong> Usuário: <code className="bg-white px-1">admin</code> | Senha: <code className="bg-white px-1">admin</code></li>
+              <li><strong>Gestor CPECC:</strong> Usuário: <code className="bg-white px-1 shadow-sm">cpecc</code> | Senha: <code className="bg-white px-1 shadow-sm">cpecc</code></li>
+              <li><strong>Pesquisadores:</strong> Dados mock já carregados no LocalStorage.</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

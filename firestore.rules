@@ -1,0 +1,169 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email_verified == true && (
+        request.auth.token.email == "mhs.pro.digital@gmail.com" ||
+        (exists(/databases/$(database)/documents/system_config/admins) &&
+         request.auth.token.email in get(/databases/$(database)/documents/system_config/admins).data.emails)
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.size() <= 256 && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Validation Blueprints
+    // ===============================================================
+    function isValidResearcherProfile(data) {
+      return data.uid == request.auth.uid &&
+             data.nome is string && data.nome.size() > 0 && data.nome.size() <= 100 &&
+             data.cpf is string && data.cpf.size() > 0 && data.cpf.size() <= 20 &&
+             data.email_inst is string && isValidEmail(data.email_inst) &&
+             (!('status' in data) || data.status in ['Pendente', 'Ativo', 'Inativo', 'Rejeitado', 'Pendência', 'Em Análise']);
+    }
+
+    function isValidProject(data) {
+      return data.authorUid == request.auth.uid &&
+             data.type in ['fomento_pesquisa', 'fomento_publicacao', 'picite'] &&
+             data.status in ['Rascunho', 'Em Análise', 'Aprovado', 'Pendente', 'Rejeitado', 'Pendência', 'Cancelado pelo Pesquisador', 'Em Execução', 'Concluído'] &&
+             data.raw_data is string && data.raw_data.size() <= 50000;
+    }
+
+    function isValidMessage(data) {
+      return data.authorUid == request.auth.uid &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000 &&
+             data.from in ['pesquisador', 'admin'] && 
+             data.read is bool;
+    }
+
+    function isValidSignature(data) {
+      return data.authorUid is string && isValidId(data.authorUid) &&
+             data.documentName is string && data.documentName.size() <= 200 &&
+             data.status in ['Aprovado', 'Rejeitado'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /researchers/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      allow create: if isVerified() && isOwner(userId) && 
+                      isValidId(userId) &&
+                      incoming().keys().hasAll(['uid', 'nome', 'cpf', 'email_inst', 'createdAt']) &&
+                      isValidResearcherProfile(incoming()) &&
+                      incoming().createdAt == request.time;
+                      
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                      isValidResearcherProfile(incoming()) &&
+                      incoming().uid == existing().uid &&
+                      incoming().createdAt == existing().createdAt &&
+                      (
+                        isAdmin() ||
+                        // Researchers can only update their profile if status is NOT a terminal reject
+                        (existing().status != 'Rejeitado' && 
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'nome', 'cpf', 'nascimento', 'nome_mae', 'nome_pai', 'naturalidade', 'nacionalidade', 
+                           'passaporte', 'inss', 'pis', 'email_inst', 'email_pess', 'telefone', 'whatsapp', 
+                           'cep', 'logradouro', 'complemento', 'cidade', 'uf', 'vinculo', 'matricula', 
+                           'carga_horaria', 'regional', 'tipo_unidade', 'lotacao', 'setor', 'cep_inst', 
+                           'end_inst', 'sei', 'graduacao', 'titulacao', 'area', 'lattes', 'orcid', 
+                           'orcid_link', 'historico_json', 'banco', 'agencia', 'tipo_conta', 'conta', 
+                           'genero', 'raca', 'ensino_medio', 'beneficiario', 'pcd', 'pcd_detalhe', 
+                           'atuacao', 'detalhes_atuacao', 'grupo_cnpq', 'documentos_json', 'updatedAt'
+                         ]) && incoming().updatedAt == request.time)
+                      );
+    }
+
+    match /projects/{projectId} {
+      allow get: if isVerified() && (existing().authorUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (resource.data.authorUid == request.auth.uid || isAdmin());
+      
+      allow create: if isVerified() && 
+                      isValidId(projectId) &&
+                      incoming().authorUid == request.auth.uid &&
+                      incoming().keys().hasAll(['authorUid', 'type', 'status', 'raw_data', 'createdAt']) &&
+                      isValidProject(incoming()) &&
+                      incoming().createdAt == request.time;
+                      
+      allow update: if isVerified() && (existing().authorUid == request.auth.uid || isAdmin()) &&
+                      isValidProject(incoming()) &&
+                      incoming().authorUid == existing().authorUid &&
+                      incoming().createdAt == existing().createdAt &&
+                      (
+                        isAdmin() ||
+                        (
+                          // Researcher action: Save draft or submit
+                          existing().status in ['Rascunho', 'Pendência'] &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['raw_data', 'status', 'updatedAt']) &&
+                          incoming().updatedAt == request.time
+                        )
+                      );
+      
+      allow delete: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow get: if isVerified() && (existing().authorUid == request.auth.uid || isAdmin());
+      allow list: if isVerified() && (resource.data.authorUid == request.auth.uid || isAdmin());
+      
+      allow create: if isVerified() && 
+                      isValidId(messageId) &&
+                      incoming().authorUid == request.auth.uid &&
+                      isValidMessage(incoming()) &&
+                      incoming().createdAt == request.time &&
+                      exists(/databases/$(database)/documents/projects/$(incoming().projectId));
+                      
+      allow update: if isVerified() && isAdmin(); 
+      allow delete: if isAdmin();
+    }
+
+    match /signatures/{signatureId} {
+      allow read: if isVerified() && (existing().authorUid == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /system_config/admins {
+      allow read: if isSignedIn(); 
+      allow write: if isAdmin();
+    }
+  }
+}

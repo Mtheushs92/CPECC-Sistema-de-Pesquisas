@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getFromLocal, saveToLocal, getOneFromLocal } from '@/lib/local-storage';
 import { ArrowLeft, FileText, Plus, TrendingUp, Landmark, CheckCircle2, AlertCircle, Eye, Download, Edit2, AlertTriangle, X, MessageSquare, Check, Upload, Clock } from 'lucide-react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { useAuth } from '@/lib/auth-context';
 import { uploadToGoogleDrive } from '@/lib/google-drive';
 
@@ -17,9 +16,10 @@ export default function DossieProjeto({ project, onBack }: { project?: any, onBa
   useEffect(() => {
     const fetchProfile = async () => {
       if (user) {
-        const docRef = doc(db, 'researchers', user.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) setUserProfile(docSnap.data());
+        
+      const p = getOneFromLocal('researchers', user.id);
+      if (p) setUserProfile(p);
+  
       }
     };
     fetchProfile();
@@ -105,13 +105,22 @@ export default function DossieProjeto({ project, onBack }: { project?: any, onBa
       
       const updatedDespesas = [expense, ...despesas];
       
-      const docRef = doc(db, 'projects', data.id);
-      await updateDoc(docRef, {
+      
+      const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+      for (const t of types) {
+        const stored = getFromLocal(t);
+        const idx = stored.findIndex((i:any) => i.id === data.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...{
         raw_data: JSON.stringify({
           ...rawData,
           despesas: updatedDespesas
         })
-      });
+      } };
+          localStorage.setItem(t, JSON.stringify(stored));
+        }
+      }
+  
       
       setDespesas(updatedDespesas);
       showToast('Prestação de contas enviada com sucesso.', 'success');
@@ -146,13 +155,22 @@ export default function DossieProjeto({ project, onBack }: { project?: any, onBa
 
       const updatedRelatorios = [report, ...relatorios];
 
-      const docRef = doc(db, 'projects', data.id);
-      await updateDoc(docRef, {
+      
+      const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+      for (const t of types) {
+        const stored = getFromLocal(t);
+        const idx = stored.findIndex((i:any) => i.id === data.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...{
         raw_data: JSON.stringify({
           ...rawData,
           relatorios: updatedRelatorios
         })
-      });
+      } };
+          localStorage.setItem(t, JSON.stringify(stored));
+        }
+      }
+  
       
       setRelatorios(updatedRelatorios);
       showToast('Relatório enviado com sucesso.', 'success');
@@ -170,8 +188,13 @@ export default function DossieProjeto({ project, onBack }: { project?: any, onBa
   const handleRequestExtension = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const docRef = doc(db, 'projects', data.id);
-      await updateDoc(docRef, {
+      
+      const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+      for (const t of types) {
+        const stored = getFromLocal(t);
+        const idx = stored.findIndex((i:any) => i.id === data.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...{
         raw_data: JSON.stringify({
           ...rawData,
           prorrogacao_solicitada: {
@@ -180,7 +203,11 @@ export default function DossieProjeto({ project, onBack }: { project?: any, onBa
             status: 'Pendente'
           }
         })
-      });
+      } };
+          localStorage.setItem(t, JSON.stringify(stored));
+        }
+      }
+  
         
       showToast('Solicitação de prorrogação enviada com sucesso.', 'success');
       setIsExtensionModalOpen(false);

@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getFromLocal, saveToLocal, getOneFromLocal } from '@/lib/local-storage';
 import { useAuth } from '@/lib/auth-context';
 import { ArrowLeft, Check, Upload } from 'lucide-react';
-import { saveToLocal } from '@/lib/local-storage';
 import { formatCPF } from '@/lib/formatters';
-import { doc, getDoc, setDoc, updateDoc, collection } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { uploadToGoogleDrive } from '@/lib/google-drive';
 
 const GOOGLE_DRIVE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuBZhMOrfMNzjkODqz-JE5Yu_3qTH94l5rP_Kd-UiwOzV8CWgPf3EuXxp4nvmyz92Y0w/exec';
@@ -20,9 +18,10 @@ export default function Picite({ onBack, initialData, readOnly }: { onBack: () =
   useEffect(() => {
     const fetchProfile = async () => {
       if (user) {
-        const docRef = doc(db, 'researchers', user.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) setUserProfile(docSnap.data());
+        
+      const p = getOneFromLocal('researchers', user.id);
+      if (p) setUserProfile(p);
+  
       }
     };
     fetchProfile();
@@ -75,12 +74,11 @@ export default function Picite({ onBack, initialData, readOnly }: { onBack: () =
         plano_trabalho_url = await uploadToGoogleDrive(file, userProfile.nome, userProfile.cpf, GOOGLE_DRIVE_SCRIPT_URL);
       }
 
-      let currentRawData = initialData?.raw_data || {};
+      let currentRawData = initialData?.raw_data ? (typeof initialData.raw_data === 'string' ? JSON.parse(initialData.raw_data) : initialData.raw_data) : {};
       if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().raw_data) {
-          currentRawData = JSON.parse(docSnap.data().raw_data);
+        const docSnap = getOneFromLocal('picite', initialData.id);
+        if (docSnap && docSnap.raw_data) {
+          currentRawData = typeof docSnap.raw_data === 'string' ? JSON.parse(docSnap.raw_data) : docSnap.raw_data;
         }
       }
 
@@ -95,24 +93,24 @@ export default function Picite({ onBack, initialData, readOnly }: { onBack: () =
         document_statuses: documentStatuses
       };
 
-      if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        await updateDoc(docRef, {
-          status: file ? 'Pendente' : (initialData.status === 'Pendência' ? 'Pendente' : initialData.status),
-          raw_data: JSON.stringify(rawData)
-        });
-
-        showToast('Projeto PICITE atualizado com sucesso!', 'success');
-      } else {
-        const newDocRef = doc(collection(db, 'projects'));
-        await setDoc(newDocRef, {
+      const projectData = {
           authorUid: user.id,
           type: 'picite',
-          status: 'Pendente',
+          status: file ? 'Pendente' : (initialData?.status === 'Pendência' ? 'Pendente' : (initialData?.status || 'Pendente')),
           raw_data: JSON.stringify(rawData),
-          createdAt: new Date().toISOString()
-        });
+          createdAt: initialData?.createdAt || new Date().toISOString()
+      };
 
+      if (initialData?.id) {
+        const stored = getFromLocal('picite');
+        const idx = stored.findIndex((i:any) => i.id === initialData.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...projectData };
+          localStorage.setItem('picite', JSON.stringify(stored));
+        }
+        showToast('Projeto PICITE atualizado com sucesso!', 'success');
+      } else {
+        saveToLocal('picite', projectData);
         showToast('Projeto PICITE submetido com sucesso!', 'success');
       }
 

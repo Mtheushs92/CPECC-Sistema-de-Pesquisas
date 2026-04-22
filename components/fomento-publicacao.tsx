@@ -3,10 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ArrowLeft, ArrowRight, Check, Upload, Search, Plus, Trash2, FileText } from 'lucide-react';
-import { saveToLocal, getFromLocal } from '@/lib/local-storage';
+import { saveToLocal, getFromLocal, getOneFromLocal } from '@/lib/local-storage';
 import { formatCPF } from '@/lib/formatters';
-import { doc, getDoc, setDoc, updateDoc, collection } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { uploadToGoogleDrive } from '@/lib/google-drive';
 
 const GOOGLE_DRIVE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuBZhMOrfMNzjkODqz-JE5Yu_3qTH94l5rP_Kd-UiwOzV8CWgPf3EuXxp4nvmyz92Y0w/exec';
@@ -21,13 +19,10 @@ export default function FomentoPublicacao({ onBack, initialData, readOnly = fals
   const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchProfile = () => {
       if (user) {
-        const docRef = doc(db, 'researchers', user.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const profileData = { ...data, ...data.raw_data };
+        const profileData = getOneFromLocal('researchers', user.id);
+        if (profileData) {
           setUserProfile(profileData);
           setAutores(prev => {
             if (prev.length === 0) {
@@ -138,12 +133,11 @@ export default function FomentoPublicacao({ onBack, initialData, readOnly = fals
       if (files.resumo) resumo_url = await uploadToGoogleDrive(files.resumo, userProfile.nome, userProfile.cpf, GOOGLE_DRIVE_SCRIPT_URL);
       if (files.aceite) aceite_url = await uploadToGoogleDrive(files.aceite, userProfile.nome, userProfile.cpf, GOOGLE_DRIVE_SCRIPT_URL);
 
-      let currentRawData = initialData?.raw_data || {};
+      let currentRawData = initialData?.raw_data ? (typeof initialData.raw_data === 'string' ? JSON.parse(initialData.raw_data) : initialData.raw_data) : {};
       if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().raw_data) {
-          currentRawData = JSON.parse(docSnap.data().raw_data);
+        const docSnap = getOneFromLocal('fomento_publicacao', initialData.id);
+        if (docSnap && docSnap.raw_data) {
+          currentRawData = typeof docSnap.raw_data === 'string' ? JSON.parse(docSnap.raw_data) : docSnap.raw_data;
         }
       }
 
@@ -175,11 +169,14 @@ export default function FomentoPublicacao({ onBack, initialData, readOnly = fals
       };
 
       if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        await updateDoc(docRef, projectData);
+        const stored = getFromLocal('fomento_publicacao');
+        const idx = stored.findIndex((i:any) => i.id === initialData.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...projectData };
+          localStorage.setItem('fomento_publicacao', JSON.stringify(stored));
+        }
       } else {
-        const newDocRef = doc(collection(db, 'projects'));
-        await setDoc(newDocRef, projectData);
+        saveToLocal('fomento_publicacao', projectData);
       }
 
       showToast(isDraft ? 'Rascunho salvo com sucesso!' : 'Solicitação de fomento para publicação submetida com sucesso!', 'success');

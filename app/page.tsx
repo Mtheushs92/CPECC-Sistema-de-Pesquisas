@@ -6,45 +6,22 @@ import Login from '@/components/login';
 import Onboarding from '@/components/onboarding';
 import Dashboard from '@/components/dashboard';
 import AdminDashboard from '@/components/admin-dashboard';
-import { seedMockData } from '@/lib/local-storage';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { seedMockData, getOneFromLocal } from '@/lib/local-storage';
 
 export default function Home() {
   const { user, adminUser, loading } = useAuth();
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Seed basic data on load
     seedMockData();
-
-    // Test Firestore Connection
-    const testConnection = async () => {
-      try {
-        const { doc, getDocFromServer } = await import('firebase/firestore');
-        await getDocFromServer(doc(db, 'system_config', 'connection_test'));
-      } catch (error: any) {
-        if (error.message?.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    };
-    testConnection();
 
     if (user) {
       seedMockData(user.id);
     }
 
-    const checkProfile = async () => {
+    const checkProfile = () => {
       if (user) {
-        try {
-          const docRef = doc(db, 'researchers', user.id);
-          const docSnap = await getDoc(docRef);
-          setHasProfile(docSnap.exists());
-        } catch (error) {
-          console.error('Error checking profile:', error);
-          setHasProfile(false);
-        }
+        setHasProfile(!!getOneFromLocal('researchers', user.id));
       } else {
         setHasProfile(null);
       }
@@ -61,7 +38,6 @@ export default function Home() {
     );
   }
 
-  // Admin has priority if logged in
   if (adminUser) {
     return <AdminDashboard />;
   }

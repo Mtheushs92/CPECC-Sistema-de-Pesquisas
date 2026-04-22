@@ -5,8 +5,6 @@ import { useAuth } from '@/lib/auth-context';
 import { ArrowLeft, ArrowRight, Plus, Trash2, Upload, Check, Search, Edit2, FileText, AlertCircle } from 'lucide-react';
 import { saveToLocal, getFromLocal, getOneFromLocal } from '@/lib/local-storage';
 import { formatCPF } from '@/lib/formatters';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { uploadToGoogleDrive } from '@/lib/google-drive';
 
 const GOOGLE_DRIVE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwuBZhMOrfMNzjkODqz-JE5Yu_3qTH94l5rP_Kd-UiwOzV8CWgPf3EuXxp4nvmyz92Y0w/exec';
@@ -60,15 +58,11 @@ export default function FomentoPesquisa({ onBack, initialData, readOnly = false 
   const [searchError, setSearchError] = useState('');
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchProfile = () => {
       if (user) {
         try {
-          const docRef = doc(db, 'researchers', user.id);
-          const docSnap = await getDoc(docRef);
-            
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            const profileData = { ...data, ...data.raw_data };
+          const profileData = getOneFromLocal('researchers', user.id);
+          if (profileData) {
             setUserProfile(profileData);
             setEquipe(prev => {
               if (prev.length === 0) {
@@ -177,10 +171,9 @@ export default function FomentoPesquisa({ onBack, initialData, readOnly = false 
 
       let currentRawData = initialData?.raw_data || {};
       if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().raw_data) {
-          currentRawData = JSON.parse(docSnap.data().raw_data);
+        const docSnap = getOneFromLocal('fomento_pesquisa', initialData.id);
+        if (docSnap && docSnap.raw_data) {
+          currentRawData = JSON.parse(docSnap.raw_data);
         }
       }
 
@@ -190,7 +183,7 @@ export default function FomentoPesquisa({ onBack, initialData, readOnly = false 
         delete documentStatuses[key];
       }
 
-      // Save project to Supabase
+      // Save project to Supabase/LocalStorage
       const rawData = {
         ...currentRawData,
         ...formData,
@@ -210,11 +203,14 @@ export default function FomentoPesquisa({ onBack, initialData, readOnly = false 
       };
 
       if (initialData?.id) {
-        const docRef = doc(db, 'projects', initialData.id);
-        await updateDoc(docRef, projectData);
+        const stored = getFromLocal('fomento_pesquisa');
+        const idx = stored.findIndex((i:any) => i.id === initialData.id);
+        if (idx >= 0) {
+          stored[idx] = { ...stored[idx], ...projectData };
+          localStorage.setItem('fomento_pesquisa', JSON.stringify(stored));
+        }
       } else {
-        const newDocRef = doc(collection(db, 'projects'));
-        await setDoc(newDocRef, projectData);
+        saveToLocal('fomento_pesquisa', projectData);
       }
       
       showToast(isDraft ? 'Rascunho salvo com sucesso!' : 'Projeto submetido com sucesso!', 'success');

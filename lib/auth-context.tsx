@@ -1,9 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from './firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { getFromLocal, saveToLocal, getOneFromLocal, seedMockData } from './local-storage';
+
+type User = any;
 
 interface AuthContextType {
   user: User | null;
@@ -31,68 +31,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [adminUser, setAdminUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [adminsList, setAdminsList] = useState<any[]>([]);
 
   useEffect(() => {
-    // Check local storage for admins logic
-    const checkAdminSession = () => {
-      const storedAdmin = localStorage.getItem('adminSession');
-      if (storedAdmin) {
-        setAdminUser(JSON.parse(storedAdmin));
-      }
-    };
+    // Ao iniciar, garante que test user existe localmente
+    seedMockData();
+
+    const storedUser = localStorage.getItem('userSession');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
     
-    checkAdminSession();
+    const storedAdmin = localStorage.getItem('adminSession');
+    if (storedAdmin) {
+      setAdminUser(JSON.parse(storedAdmin));
+    }
 
-    // Firebase Auth Listener
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      
-      // If user logs in with an admin email via Firebase, grant them admin status instantly
-      if (currentUser && (
-        currentUser.email === 'matheus.hs@fepecs.edu.br' || 
-        currentUser.email === 'mhs.pro.digital@gmail.com'
-      )) {
-        const generatedAdmin = {
-          id: currentUser.uid,
-          username: currentUser.email,
-          name: 'Administrador Global',
-          role: 'admin'
-        };
-        setAdminUser(generatedAdmin);
-        localStorage.setItem('adminSession', JSON.stringify(generatedAdmin));
-      }
-      
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribe();
-    };
+    setLoading(false);
   }, []);
 
   const signInWithPassword = async (email: string, pass: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
+    await new Promise(r => setTimeout(r, 500));
+    const users = getFromLocal('users');
+    const foundUser = users.find((u: any) => u.email === email && u.password === pass);
+    if (foundUser) {
+      setUser(foundUser);
+      localStorage.setItem('userSession', JSON.stringify(foundUser));
       return true;
-    } catch (error) {
-      console.error('Error signing in with Password', error);
-      return false;
     }
+    return false;
   };
 
   const signUp = async (email: string, pass: string) => {
-    try {
-      await createUserWithEmailAndPassword(auth, email, pass);
-      return true;
-    } catch (error) {
-      console.error('Error signing up', error);
-      return false;
-    }
+    await new Promise(r => setTimeout(r, 500));
+    const users = getFromLocal('users');
+    const exists = users.find((u: any) => u.email === email);
+    if (exists) return false;
+    
+    const newUser = { id: Date.now().toString(), uid: Date.now().toString(), email, password: pass };
+    saveToLocal('users', newUser);
+    setUser(newUser);
+    localStorage.setItem('userSession', JSON.stringify(newUser));
+    // Semeia dados ficticios logo pos cadastro
+    seedMockData(newUser.id);
+    return true;
   };
 
   const loginAdmin = (username: string, pass: string) => {
-    const admins = adminsList.length > 0 ? adminsList : JSON.parse(localStorage.getItem('admins') || '[]');
+    const admins = getFromLocal('admins');
     const admin = admins.find((a: any) => a.username === username && a.password === pass);
     if (admin) {
       setAdminUser(admin);
@@ -103,16 +88,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async () => {
-    try {
-      if (adminUser) {
-        setAdminUser(null);
-        localStorage.removeItem('adminSession');
-      }
-      
-      await signOut(auth);
-    } catch (error) {
-      console.error('Error signing out', error);
-    }
+    setUser(null);
+    setAdminUser(null);
+    localStorage.removeItem('userSession');
+    localStorage.removeItem('adminSession');
   };
 
   return (

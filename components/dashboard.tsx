@@ -10,8 +10,7 @@ import Onboarding from './onboarding';
 import AcompanhamentoPublicacao from './acompanhamento-publicacao';
 import DossieProjeto from './dossie-projeto';
 import Picite from './picite';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { getFromLocal, getOneFromLocal } from '@/lib/local-storage';
 
 type ViewState = 'dashboard' | 'fomento-pesquisa' | 'fomento-publicacao' | 'profile' | 'acompanhamento-publicacao' | 'dossie-projeto' | 'picite';
 
@@ -43,8 +42,15 @@ export default function Dashboard() {
   const handleCancelProject = async () => {
     if (!projectToCancel) return;
     try {
-      const docRef = doc(db, 'projects', projectToCancel);
-      await updateDoc(docRef, { status: 'Cancelado pelo Pesquisador' });
+      const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+      for (const t of types) {
+        const stored = getFromLocal(t);
+        const item = stored.find((i:any) => i.id === projectToCancel);
+        if (item) {
+          item.status = 'Cancelado pelo Pesquisador';
+          localStorage.setItem(t, JSON.stringify(stored));
+        }
+      }
       setProjects(prev => prev.map(p => p.id === projectToCancel ? { ...p, status: 'Cancelado pelo Pesquisador' } : p));
       showToast('Submissão cancelada com sucesso.', 'success');
     } catch (err) {
@@ -56,48 +62,31 @@ export default function Dashboard() {
   };
   const [loading, setLoading] = useState(true);
 
+  // Poll local storage periodically since we removed real-time subscriptions
   useEffect(() => {
     if (!user) return;
 
-    // Set up real-time subscriptions
-    const profileRef = doc(db, 'researchers', user.uid);
-    const unsubscribeProfile = onSnapshot(profileRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setProfile({ ...data, id: docSnap.id });
-      } else {
-        setProfile(null);
-      }
+    const fetchData = () => {
+      const p = getOneFromLocal('researchers', user.uid);
+      setProfile(p || null);
+      
+      const pesq = getFromLocal('fomento_pesquisa', 'authorUid', user.uid);
+      const pub = getFromLocal('fomento_publicacao', 'authorUid', user.uid);
+      const pic = getFromLocal('picite', 'authorUid', user.uid);
+      
+      const allP = [...pesq.map((x:any)=>({...x, type:'Fomento à Pesquisa'})), 
+                    ...pub.map((x:any)=>({...x, type:'Fomento para Publicação'})), 
+                    ...pic.map((x:any)=>({...x, type:'PICITE'}))];
+                    
+      allP.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      
+      setProjects(allP);
       setLoading(false);
-    }, (error) => {
-      console.error('Error fetching profile:', error);
-      setLoading(false);
-    });
-
-    const projectsQuery = query(collection(db, 'projects'), where('authorUid', '==', user.uid));
-    const unsubscribeProjects = onSnapshot(projectsQuery, (snapshot) => {
-      const formattedProjects = snapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          ...JSON.parse(data.raw_data || '{}'),
-          id: docSnap.id,
-          type: data.type === 'fomento_pesquisa' ? 'Fomento à Pesquisa' : data.type === 'fomento_publicacao' ? 'Fomento para Publicação' : 'PICITE',
-          status: data.status,
-          createdAt: data.createdAt,
-          raw_data: JSON.parse(data.raw_data || '{}')
-        };
-      });
-      // Sort by createdAt descending manually since we can't easily do it with where without composite index
-      formattedProjects.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setProjects(formattedProjects);
-    }, (error) => {
-      console.error('Error fetching projects:', error);
-    });
-
-    return () => {
-      unsubscribeProfile();
-      unsubscribeProjects();
     };
+
+    fetchData();
+    const interval = setInterval(fetchData, 2000);
+    return () => clearInterval(interval);
   }, [user]);
 
   const [showMessages, setShowMessages] = useState(false);
@@ -119,8 +108,13 @@ export default function Dashboard() {
     const updatedRawData = { ...profile, mensagens: updatedMessages };
 
     try {
-      const docRef = doc(db, 'researchers', user.uid);
-      await updateDoc(docRef, updatedRawData);
+      const rs = getFromLocal('researchers');
+      const idx = rs.findIndex((r:any) => r.uid === user.uid);
+      if(idx >= 0) {
+        rs[idx] = updatedRawData;
+        localStorage.setItem('researchers', JSON.stringify(rs));
+      }
+      setProfile(updatedRawData);
       setNewMessage('');
     } catch (err) {
       console.error('Error sending message:', err);
@@ -143,8 +137,13 @@ export default function Dashboard() {
     if (hasUnread) {
       const updatedRawData = { ...profile, mensagens: updatedMessages };
       try {
-        const docRef = doc(db, 'researchers', user.uid);
-        await updateDoc(docRef, updatedRawData);
+        const rs = getFromLocal('researchers');
+        const idx = rs.findIndex((r:any) => r.uid === user.uid);
+        if(idx >= 0) {
+          rs[idx] = updatedRawData;
+          localStorage.setItem('researchers', JSON.stringify(rs));
+        }
+        setProfile(updatedRawData);
       } catch (err) {
         console.error('Error marking messages as read:', err);
       }
@@ -573,8 +572,15 @@ export default function Dashboard() {
                         onClick={async (e) => {
                           e.stopPropagation();
                           try {
-                            const docRef = doc(db, 'projects', proj.id);
-                            await updateDoc(docRef, { status: 'Restauração Solicitada' });
+                            const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+                            for (const t of types) {
+                              const stored = getFromLocal(t);
+                              const item = stored.find((i:any) => i.id === proj.id);
+                              if (item) {
+                                item.status = 'Restauração Solicitada';
+                                localStorage.setItem(t, JSON.stringify(stored));
+                              }
+                            }
                             setProjects(prev => prev.map(p => p.id === proj.id ? { ...p, status: 'Restauração Solicitada' } : p));
                             showToast('Solicitação de restauração enviada com sucesso.', 'success');
                           } catch (err) {

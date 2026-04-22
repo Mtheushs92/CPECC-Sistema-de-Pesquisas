@@ -28,8 +28,8 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { getFromLocal, saveToLocal, removeFromLocal } from '@/lib/local-storage';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, onSnapshot, orderBy, setDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+
+
 
 type AdminTab = 'overview' | 'submissions' | 'publications' | 'accountability' | 'team' | 'researchers';
 
@@ -69,8 +69,12 @@ export default function AdminDashboard() {
     const updatedRawData = { ...researcher, mensagens: updatedMessages };
 
     try {
-      const docRef = doc(db, 'researchers', researcherId);
-      await updateDoc(docRef, updatedRawData);
+      const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === researcherId || item.uid === researcherId);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...updatedRawData };
+        localStorage.setItem('researchers', JSON.stringify(existing));
+      }
       setResearchers(prev => prev.map(r => r.id === researcherId ? { ...r, ...updatedRawData } : r));
       if (selectedResearcher?.id === researcherId) {
         setSelectedResearcher((prev: any) => ({ ...prev, ...updatedRawData }));
@@ -104,104 +108,68 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
+    const loadData = () => {
       try {
-        // Fetch researchers
-        const researchersQuery = query(collection(db, 'researchers'));
-        const unsubscribeResearchers = onSnapshot(researchersQuery, (snapshot) => {
-          let researchersData = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-          
-          // Fallback to local data for testing if Firestore collection is empty
-          if (researchersData.length === 0) {
-            researchersData = JSON.parse(localStorage.getItem('researchers') || '[]');
-          }
-          
-          setResearchers(researchersData);
-          
-          // Fetch projects
-          const projectsQuery = query(collection(db, 'projects'));
-          const unsubscribeProjects = onSnapshot(projectsQuery, (projSnapshot) => {
-            let projectsData = projSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
-            
-            // Fallback to local data for projects if Firestore collection is empty
-            if (projectsData.length === 0) {
-              const pesq = JSON.parse(localStorage.getItem('fomento_pesquisa') || '[]');
-              const pub = JSON.parse(localStorage.getItem('fomento_publicacao') || '[]');
-              const pic = JSON.parse(localStorage.getItem('picite') || '[]');
-              projectsData = [
-                ...pesq.map((p: any) => ({ ...p, type: 'fomento_pesquisa' })),
-                ...pub.map((p: any) => ({ ...p, type: 'fomento_publicacao' })),
-                ...pic.map((p: any) => ({ ...p, type: 'picite' }))
-              ];
-            }
-            
-            setAllProjects(projectsData);
-            
-            const formattedSubmissions = projectsData
-              .filter(p => p.type === 'fomento_pesquisa')
-              .map(p => {
-                const researcher = researchersData?.find(r => r.id === p.authorUid);
-                const rawData = JSON.parse(p.raw_data || '{}');
-                return {
-                  id: p.id,
-                  title: rawData.titulo || 'Sem título',
-                  type: 'Fomento Pesquisa',
-                  status: p.status,
-                  createdAt: p.createdAt,
-                  researcherName: researcher?.nome || 'Desconhecido',
-                  budget: rawData.orcamento_json ? {
-                    total: JSON.parse(rawData.orcamento_json).reduce((acc: number, item: any) => acc + (item.qtd * item.valor), 0)
-                  } : { total: 0 }
-                };
-              });
-              
-            const formattedPublications = projectsData
-              .filter(p => p.type === 'fomento_publicacao')
-              .map(p => {
-                const researcher = researchersData?.find(r => r.id === p.authorUid);
-                const rawData = JSON.parse(p.raw_data || '{}');
-                return {
-                  id: p.id,
-                  title: rawData.titulo || 'Sem título',
-                  type: 'Fomento Publicação',
-                  status: p.status,
-                  createdAt: p.createdAt,
-                  researcherName: researcher?.nome || 'Desconhecido'
-                };
-              });
-
-            setSubmissions(formattedSubmissions);
-            setPublications(formattedPublications);
-            setLoading(false);
-          }, (error) => {
-            console.error('Error fetching projects:', error);
-            setLoading(false);
+        const researchersData = getFromLocal('researchers');
+        setResearchers(researchersData);
+        
+        let projectsData: any[] = [];
+        const pesq = getFromLocal('fomento_pesquisa');
+        const pub = getFromLocal('fomento_publicacao');
+        const pic = getFromLocal('picite');
+        projectsData = [
+          ...pesq.map((p: any) => ({ ...p, type: 'fomento_pesquisa' })),
+          ...pub.map((p: any) => ({ ...p, type: 'fomento_publicacao' })),
+          ...pic.map((p: any) => ({ ...p, type: 'picite' }))
+        ];
+        
+        setAllProjects(projectsData);
+        
+        const formattedSubmissions = projectsData
+          .filter(p => p.type === 'fomento_pesquisa')
+          .map(p => {
+            const researcher = researchersData?.find((r:any) => r.id === p.authorUid || r.uid === p.authorUid);
+            const rawData = p.raw_data ? JSON.parse(p.raw_data) : p;
+            return {
+              id: p.id,
+              title: rawData.titulo || p.titulo || 'Sem título',
+              type: 'Fomento Pesquisa',
+              status: p.status,
+              createdAt: p.createdAt,
+              researcherName: researcher?.nome || 'Desconhecido',
+              budget: rawData.orcamento_json ? {
+                total: JSON.parse(rawData.orcamento_json).reduce((acc: number, item: any) => acc + (item.qtd * item.valor), 0)
+              } : { total: 0 }
+            };
           });
           
-          return () => unsubscribeProjects();
-        }, (error) => {
-          console.error('Error fetching researchers:', error);
-          setLoading(false);
-        });
-        
-        // Load admins from Firestore
-        const adminDocRef = doc(db, 'system_config', 'admins');
-        getDoc(adminDocRef).then((docSnap) => {
-          if (docSnap.exists() && docSnap.data().admins) {
-            setAdmins(docSnap.data().admins);
-          } else {
-            // Fallback to local storage or default
-            const localAdmins = JSON.parse(localStorage.getItem('admins') || '[]');
-            if (localAdmins.length > 0) {
-              setAdmins(localAdmins);
-            } else {
-              setAdmins([{ username: 'admin', role: 'Diretoria', nome: 'Administrador Geral', cargo: 'Diretor', matricula: '000000' }]);
-            }
-          }
-        });
+        const formattedPublications = projectsData
+          .filter(p => p.type === 'fomento_publicacao')
+          .map(p => {
+            const researcher = researchersData?.find((r:any) => r.id === p.authorUid || r.uid === p.authorUid);
+            const rawData = p.raw_data ? JSON.parse(p.raw_data) : p;
+            return {
+              id: p.id,
+              title: rawData.titulo || p.titulo || 'Sem título',
+              type: 'Fomento Publicação',
+              status: p.status,
+              createdAt: p.createdAt,
+              researcherName: researcher?.nome || 'Desconhecido'
+            };
+          });
 
-        return () => unsubscribeResearchers();
+        setSubmissions(formattedSubmissions);
+        setPublications(formattedPublications);
+        
+        // Load admins
+        const localAdmins = getFromLocal('admins');
+        if (localAdmins.length > 0) {
+          setAdmins(localAdmins);
+        } else {
+          setAdmins([{ username: 'admin', role: 'Diretoria', nome: 'Administrador Geral', cargo: 'Diretor', matricula: '000000' }]);
+        }
+
+        setLoading(false);
       } catch (error) {
         console.error('Error loading data:', error);
         setLoading(false);
@@ -209,50 +177,38 @@ export default function AdminDashboard() {
     };
 
     loadData();
+    const interval = setInterval(loadData, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     const updatedAdmins = [...admins, { ...newAdmin, id: Date.now().toString() }];
     setAdmins(updatedAdmins);
+    saveToLocal('admins', { ...newAdmin, id: Date.now().toString() });
     
-    try {
-      const docRef = doc(db, 'system_config', 'admins');
-      await updateDoc(docRef, { admins: updatedAdmins });
-      
-      localStorage.setItem('admins', JSON.stringify(updatedAdmins));
-      setNewAdmin({ username: '', password: '', nome: '', cargo: '', matricula: '', role: 'gestor' });
-      setShowAddAdmin(false);
-      showToast('Gestor adicionado com sucesso!', 'success');
-    } catch (error) {
-      console.error('Error saving team:', error);
-      showToast('Erro ao salvar equipe no banco de dados.', 'error');
-    }
+    setNewAdmin({ username: '', password: '', nome: '', cargo: '', matricula: '', role: 'gestor' });
+    setShowAddAdmin(false);
+    showToast('Gestor adicionado com sucesso!', 'success');
   };
 
   const removeAdmin = async (id: string) => {
     const adminToRemove = admins.find(a => a.id === id);
-    if (adminToRemove?.username === 'admin') return; // Prevent deleting master admin
+    if (adminToRemove?.username === 'admin') return; 
     
-    const updatedAdmins = admins.filter(a => a.id !== id);
-    setAdmins(updatedAdmins);
-    
-    try {
-      const docRef = doc(db, 'system_config', 'admins');
-      await updateDoc(docRef, { admins: updatedAdmins });
-      
-      localStorage.setItem('admins', JSON.stringify(updatedAdmins));
-      showToast('Colaborador removido.', 'success');
-    } catch (error) {
-      console.error('Error removing team member:', error);
-      showToast('Erro ao remover colaborador do banco de dados.', 'error');
-    }
+    removeFromLocal('admins', id);
+    setAdmins(admins.filter(a => a.id !== id));
+    showToast('Colaborador removido.', 'success');
   };
 
   const handleUpdateResearcherStatus = async (id: string, newStatus: string) => {
     try {
-      const docRef = doc(db, 'researchers', id);
-      await updateDoc(docRef, { status: newStatus });
+      const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === id || item.uid === id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ status: newStatus } };
+        localStorage.setItem('researchers', JSON.stringify(existing));
+      }
 
       setResearchers(researchers.map(r => r.id === id ? { ...r, status: newStatus } : r));
       if (selectedResearcher && selectedResearcher.id === id) {
@@ -538,8 +494,12 @@ export default function AdminDashboard() {
   const updateStatus = async (collectionName: string, id: string, status: string) => {
     try {
       // Update in Firestore
-      const docRef = doc(db, 'projects', id);
-      await updateDoc(docRef, { status });
+      const existing = JSON.parse(localStorage.getItem('projects') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === id || item.uid === id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ status } };
+        localStorage.setItem('projects', JSON.stringify(existing));
+      }
         
       // Update local state
       if (collectionName === 'submissions') {
@@ -558,16 +518,24 @@ export default function AdminDashboard() {
   const handleApproveDocument = async (id: string, isResearcher: boolean = false) => {
     try {
       if (isResearcher) {
-        const docRef = doc(db, 'researchers', id);
-        await updateDoc(docRef, { status: 'Ativo' });
+        const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === id || item.uid === id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ status: 'Ativo' } };
+        localStorage.setItem('researchers', JSON.stringify(existing));
+      }
         setResearchers(prev => prev.map(r => r.id === id ? { ...r, status: 'Ativo' } : r));
         
         if (selectedResearcher?.id === id) {
           setSelectedResearcher((prev: any) => ({ ...prev, status: 'Ativo' }));
         }
       } else {
-        const docRef = doc(db, 'projects', id);
-        await updateDoc(docRef, { status: 'Aprovado' });
+        const existing = JSON.parse(localStorage.getItem('projects') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === id || item.uid === id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ status: 'Aprovado' } };
+        localStorage.setItem('projects', JSON.stringify(existing));
+      }
         setAllProjects(prev => prev.map(p => p.id === id ? { ...p, status: 'Aprovado' } : p));
         setSubmissions(prev => prev.map(p => p.id === id ? { ...p, status: 'Aprovado' } : p));
         setPublications(prev => prev.map(p => p.id === id ? { ...p, status: 'Aprovado' } : p));
@@ -595,8 +563,12 @@ export default function AdminDashboard() {
 
       const updatedRawData = { ...project.raw_data, despesas: updatedDespesas };
 
-      const docRef = doc(db, 'projects', projectId);
-      await updateDoc(docRef, { raw_data: JSON.stringify(updatedRawData) });
+      const existing = JSON.parse(localStorage.getItem('projects') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === projectId || item.uid === projectId);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ raw_data: JSON.stringify(updatedRawData) } };
+        localStorage.setItem('projects', JSON.stringify(existing));
+      }
 
       setAllProjects(prev => prev.map(p => p.id === projectId ? { ...p, raw_data: updatedRawData } : p));
       
@@ -628,7 +600,9 @@ export default function AdminDashboard() {
         createdAt: new Date().toISOString()
       };
       
-      await setDoc(doc(db, 'researchers', researcherId), newResearcher);
+      const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      existing.push({ ...newResearcher, id: researcherId });
+      localStorage.setItem('researchers', JSON.stringify(existing));
 
       const projectId = Date.now().toString() + "_proj";
       const newProject = {
@@ -643,7 +617,10 @@ export default function AdminDashboard() {
         createdAt: new Date().toISOString()
       };
 
-      await setDoc(doc(db, 'projects', projectId), newProject);
+      const t = (newProject.type === 'fomento_pesquisa') ? 'fomento_pesquisa' : (newProject.type === 'fomento_publicacao') ? 'fomento_publicacao' : 'picite';
+      const existingProj = JSON.parse(localStorage.getItem(t) || '[]');
+      existingProj.push({ ...newProject, id: projectId });
+      localStorage.setItem(t, JSON.stringify(existingProj));
 
       showToast('Dados de teste criados no banco de dados com sucesso!');
     } catch (e: any) {
@@ -789,11 +766,15 @@ export default function AdminDashboard() {
         const updatedMessages = [...(researcher.mensagens || []), messageObj];
         const updatedRawData = { ...researcher, rejection_message: message, allow_correction: allowCorrection, mensagens: updatedMessages };
         
-        const docRef = doc(db, 'researchers', id);
-        await updateDoc(docRef, { 
+        const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === id || item.uid === id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ 
           status: newStatus,
           ...updatedRawData
-        });
+        } };
+        localStorage.setItem('researchers', JSON.stringify(existing));
+      }
         setResearchers(prev => prev.map(r => r.id === id ? { ...r, status: newStatus, ...updatedRawData } : r));
         
         if (selectedResearcher?.id === id) {
@@ -808,18 +789,30 @@ export default function AdminDashboard() {
         if (researcher) {
           const updatedMessages = [...(researcher.mensagens || []), messageObj];
           const updatedResearcherRawData = { ...researcher, mensagens: updatedMessages };
-          const researcherDocRef = doc(db, 'researchers', researcher.id);
-          await updateDoc(researcherDocRef, updatedResearcherRawData);
+          const existingR = JSON.parse(localStorage.getItem('researchers') || '[]');
+          const idxR = existingR.findIndex((item: any) => item.id === researcher.id || item.uid === researcher.id);
+          if (idxR >= 0) {
+            existingR[idxR] = { ...existingR[idxR], ...updatedResearcherRawData };
+            localStorage.setItem('researchers', JSON.stringify(existingR));
+          }
           setResearchers(prev => prev.map(r => r.id === researcher.id ? { ...r, ...updatedResearcherRawData } : r));
         }
 
         const rawData = JSON.parse(project.raw_data || '{}');
         const updatedRawData = { ...rawData, rejection_message: message, allow_correction: allowCorrection };
-        const projectDocRef = doc(db, 'projects', id);
-        await updateDoc(projectDocRef, { 
+        // Need to find which local collection this project is in
+          const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+          for (const t of types) {
+            const existingP = JSON.parse(localStorage.getItem(t) || '[]');
+            const idxP = existingP.findIndex((item: any) => item.id === id);
+            if (idxP >= 0) {
+              existingP[idxP] = { ...existingP[idxP], ...{ 
           status: newStatus,
           raw_data: JSON.stringify(updatedRawData)
-        });
+        } };
+              localStorage.setItem(t, JSON.stringify(existingP));
+            }
+          }
         setAllProjects(prev => prev.map(p => p.id === id ? { ...p, status: newStatus, raw_data: JSON.stringify(updatedRawData) } : p));
         setSubmissions(prev => prev.map(p => p.id === id ? { ...p, status: newStatus, raw_data: JSON.stringify(updatedRawData) } : p));
         setPublications(prev => prev.map(p => p.id === id ? { ...p, status: newStatus, raw_data: JSON.stringify(updatedRawData) } : p));
@@ -973,11 +966,15 @@ export default function AdminDashboard() {
           updatedRawData.allow_correction = true;
         }
 
-        const docRef = doc(db, 'researchers', docObj.id);
-        await updateDoc(docRef, { 
+        const existing = JSON.parse(localStorage.getItem('researchers') || '[]');
+      const idx = existing.findIndex((item: any) => item.id === docObj.id || item.uid === docObj.id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...{ 
           ...updatedRawData,
           status: newResearcherStatus
-        });
+        } };
+        localStorage.setItem('researchers', JSON.stringify(existing));
+      }
         setResearchers(prev => prev.map(r => r.id === docObj.id ? { ...r, ...updatedRawData, status: newResearcherStatus } : r));
         
         // Update selectedResearcher if it's the one being edited
@@ -1005,17 +1002,29 @@ export default function AdminDashboard() {
           if (researcher) {
             const updatedMessages = [...(researcher.mensagens || []), messageObj];
             const updatedResearcherRawData = { ...researcher, mensagens: updatedMessages };
-            const researcherDocRef = doc(db, 'researchers', researcher.id);
-            await updateDoc(researcherDocRef, updatedResearcherRawData);
+            const existingR = JSON.parse(localStorage.getItem('researchers') || '[]');
+          const idxR = existingR.findIndex((item: any) => item.id === researcher.id || item.uid === researcher.id);
+          if (idxR >= 0) {
+            existingR[idxR] = { ...existingR[idxR], ...updatedResearcherRawData };
+            localStorage.setItem('researchers', JSON.stringify(existingR));
+          }
             setResearchers(prev => prev.map(r => r.id === researcher.id ? { ...r, ...updatedResearcherRawData } : r));
           }
         }
 
-        const projectDocRef = doc(db, 'projects', docObj.id);
-        await updateDoc(projectDocRef, { 
+        // Need to find which local collection this project is in
+          const types = ['fomento_pesquisa', 'fomento_publicacao', 'picite'];
+          for (const t of types) {
+            const existingP = JSON.parse(localStorage.getItem(t) || '[]');
+            const idxP = existingP.findIndex((item: any) => item.id === docObj.id);
+            if (idxP >= 0) {
+              existingP[idxP] = { ...existingP[idxP], ...{ 
           raw_data: JSON.stringify(updatedRawData),
           status: newProjectStatus
-        });
+        } };
+              localStorage.setItem(t, JSON.stringify(existingP));
+            }
+          }
         
         setAllProjects(prev => prev.map(p => p.id === docObj.id ? { ...p, raw_data: JSON.stringify(updatedRawData), status: newProjectStatus } : p));
         setSubmissions(prev => prev.map(p => p.id === docObj.id ? { ...p, raw_data: JSON.stringify(updatedRawData), status: newProjectStatus } : p));
